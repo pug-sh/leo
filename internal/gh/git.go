@@ -39,6 +39,24 @@ func (c *Client) CommitTree(ctx context.Context, repo, sha string) (string, erro
 	return commit.GetTree().GetSHA(), nil
 }
 
+// SubtreeSHA returns the tree a commit has at dir, a directory at its root, or "" if it has none.
+func (c *Client) SubtreeSHA(ctx context.Context, repo, commit, dir string) (string, error) {
+	root, err := c.CommitTree(ctx, repo, commit)
+	if err != nil {
+		return "", err
+	}
+	tree, _, err := c.rest.Git.GetTree(ctx, Org, repo, root, false)
+	if err != nil {
+		return "", fmt.Errorf("%s: read tree %s: %w", repo, root, err)
+	}
+	for _, e := range tree.Entries {
+		if e.GetPath() == dir && e.GetType() == "tree" {
+			return e.GetSHA(), nil
+		}
+	}
+	return "", nil
+}
+
 // CommitsByOthers reports whether head has commits that base doesn't and that Leo didn't author.
 func (c *Client) CommitsByOthers(ctx context.Context, repo, base, head string) (bool, error) {
 	cmp, _, err := c.rest.Repositories.CompareCommits(ctx, Org, repo, base, head, &github.ListOptions{PerPage: 250})

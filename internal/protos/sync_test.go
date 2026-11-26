@@ -15,8 +15,9 @@ import (
 const at = "2026-11-25T00:00:00Z"
 
 // syncFixture returns a checkout of an SDK's base commit and the diff a codegen job made on it:
-// a new pin, a changed, an added and a removed proto, and changed generated code.
-func syncFixture(t *testing.T) SyncInput {
+// a new pin, a changed, an added and a removed proto, and changed generated code. It also returns
+// the tree of proto/ once the diff applies.
+func syncFixture(t *testing.T) (SyncInput, string) {
 	root := t.TempDir()
 	r := gittest.Init(t, filepath.Join(root, "sdk-a"))
 	r.WriteFile("Makefile", "PROTO_COMMIT := 8b5d0680b10c4693b4d9d15d3dbfc663\n")
@@ -31,16 +32,17 @@ func syncFixture(t *testing.T) SyncInput {
 	r.WriteFile("gen/a.ts", "new\n")
 	os.Remove(filepath.Join(r.Dir, "proto/sdk/v1/gone.proto"))
 	r.Git(at, "add", "-A")
+	protoTree := r.Git(at, "write-tree", "--prefix=proto/")
 	patch := filepath.Join(root, "changes.patch")
 	if err := os.WriteFile(patch, []byte(r.Git(at, "diff", "--cached", "--binary")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	r.Git(at, "reset", "--quiet", "--hard")
-	return SyncInput{Repo: "sdk-a", Branch: "main", Base: base, Dir: r.Dir, Patch: patch, BSR: bsr, Codegen: "success"}
+	return SyncInput{Repo: "sdk-a", Branch: "main", Base: base, Dir: r.Dir, Patch: patch, BSR: bsr, Codegen: "success"}, protoTree
 }
 
 func TestSyncOpensPullRequest(t *testing.T) {
-	in := syncFixture(t)
+	in, _ := syncFixture(t)
 	s := ghtest.New(t)
 	s.REST("GET", "/repos/pug-sh/sdk-a/pulls", 200, `[]`)
 	s.REST("GET", "/repos/pug-sh/sdk-a/git/ref/heads/leo/sync-protos", 404, `{"message": "Not Found"}`)
@@ -67,7 +69,7 @@ func TestSyncOpensPullRequest(t *testing.T) {
 }
 
 func TestSyncLeavesSomeoneElsesBranch(t *testing.T) {
-	in := syncFixture(t)
+	in, _ := syncFixture(t)
 	s := ghtest.New(t)
 	s.REST("GET", "/repos/pug-sh/sdk-a/pulls", 200, `[{"number": 5, "title": "Sync protos to 8b5d0680"}]`)
 	s.REST("GET", "/repos/pug-sh/sdk-a/git/ref/heads/leo/sync-protos", 200, `{"object": {"sha": "tip"}}`)
@@ -91,7 +93,7 @@ func TestSyncLeavesSomeoneElsesBranch(t *testing.T) {
 	s.REST("GET", "/repos/pug-sh/sdk-a/issues/5/comments", 200, `[
 	  {"user": {"login": "leo-the-pug[bot]"}, "body": "<!-- leo:protos-locked 432c927edc274179ad23f1498a6ad20d -->"}]`)
 	c, out = s.Client(true)
-	in = syncFixture(t)
+	in, _ = syncFixture(t)
 	if err := Sync(context.Background(), c, in); err != nil {
 		t.Fatal(err)
 	}
@@ -101,13 +103,15 @@ func TestSyncLeavesSomeoneElsesBranch(t *testing.T) {
 }
 
 func TestSyncReplacesBranchPastWorkflowChanges(t *testing.T) {
-	in := syncFixture(t)
+	in, _ := syncFixture(t)
 	s := ghtest.New(t)
 	s.REST("GET", "/repos/pug-sh/sdk-a/pulls", 200, `[{"number": 5, "title": "Sync protos to 8b5d0680"}]`)
 	s.REST("GET", "/repos/pug-sh/sdk-a/git/ref/heads/leo/sync-protos", 200, `{"object": {"sha": "tip"}}`)
 	s.REST("GET", "/repos/pug-sh/sdk-a/compare/main...leo/sync-protos", 200, `{"commits": [{"sha": "c1", "author": {"login": "leo-the-pug[bot]"}}]}`)
 	s.REST("GET", "/repos/pug-sh/sdk-a/git/commits/"+in.Base, 200, `{"sha": "base", "tree": {"sha": "basetree"}}`)
 	s.REST("GET", "/repos/pug-sh/sdk-a/git/commits/tip", 200, `{"sha": "tip", "tree": {"sha": "oldtree"}}`)
+	s.REST("GET", "/repos/pug-sh/sdk-a/git/trees/oldtree", 200, `{"sha": "oldtree", "tree": [
+	  {"path": "Makefile", "type": "blob", "sha": "m"}, {"path": "proto", "type": "tree", "sha": "oldprotos"}]}`)
 	s.REST("POST", "/repos/pug-sh/sdk-a/git/blobs", 201, `{"sha": "blob"}`)
 	s.REST("POST", "/repos/pug-sh/sdk-a/git/trees", 201, `{"sha": "newtree"}`)
 	s.REST("POST", "/repos/pug-sh/sdk-a/git/commits", 201, `{"sha": "0123456789abcdef"}`)
@@ -134,6 +138,25 @@ func TestSyncReplacesBranchPastWorkflowChanges(t *testing.T) {
 		`sdk-a#5: comment "Replaced by #6: main changed .github/workflows/ since this branch's base, and I can't move a branch past workflow changes."`,
 	}, "\n")
 	if got := strings.TrimSpace(out.String()); got != want {
+		t.Errorf("output:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestSyncLeavesABranchThatHasTheseProtos(t *testing.T) {
+	in, protoTree := syncFixture(t)
+	s := ghtest.New(t)
+	s.REST("GET", "/repos/pug-sh/sdk-a/pulls", 200, `[{"number": 5, "title": "Sync protos to 8b5d0680"}]`)
+	s.REST("GET", "/repos/pug-sh/sdk-a/git/ref/heads/leo/sync-protos", 200, `{"object": {"sha": "tip"}}`)
+	s.REST("GET", "/repos/pug-sh/sdk-a/compare/main...leo/sync-protos", 200, `{"commits": [{"sha": "c1", "author": {"login": "leo-the-pug[bot]"}}]}`)
+	s.REST("GET", "/repos/pug-sh/sdk-a/git/commits/tip", 200, `{"sha": "tip", "tree": {"sha": "tiptree"}}`)
+	s.REST("GET", "/repos/pug-sh/sdk-a/git/trees/tiptree", 200, fmt.Sprintf(`{"sha": "tiptree", "tree": [
+	  {"path": "Makefile", "type": "blob", "sha": "m"}, {"path": "proto", "type": "tree", "sha": %q}]}`, protoTree))
+	s.REST("GET", "/repos/pug-sh/sdk-a/issues", 200, `[]`)
+	c, out := s.Client(false)
+	if err := Sync(context.Background(), c, in); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.TrimSpace(out.String()), "sdk-a: leo/sync-protos already has these protos"; got != want {
 		t.Errorf("output:\n%s\nwant:\n%s", got, want)
 	}
 }

@@ -80,6 +80,16 @@ func push(ctx context.Context, c *gh.Client, in SyncInput) error {
 		if others {
 			return leaveAlone(ctx, c, in, pr)
 		}
+		// pug mints a BSR commit on every push, so a new commit usually carries protos the branch
+		// already has. Moving the branch for nothing but a new pin would rerun the SDK's CI.
+		same, err := sameProtos(ctx, c, in, tip)
+		if err != nil {
+			return err
+		}
+		if same {
+			c.Logf("%s: %s already has these protos", in.Repo, gh.SyncBranch)
+			return CloseFailures(ctx, c, in.Repo, synced)
+		}
 		if pr == nil {
 			closed, merged, err := c.LastClosedPR(ctx, in.Repo, gh.SyncBranch)
 			if err != nil {
@@ -99,19 +109,6 @@ func push(ctx context.Context, c *gh.Client, in SyncInput) error {
 	tree, err := c.CreateTree(ctx, in.Repo, baseTree, changes)
 	if err != nil {
 		return err
-	}
-	if tip != "" && tree != "" {
-		tipTree, err := c.CommitTree(ctx, in.Repo, tip)
-		if err != nil {
-			return err
-		}
-		if tipTree == tree {
-			c.Logf("%s: %s already holds this sync", in.Repo, gh.SyncBranch)
-			if err := ensurePR(ctx, c, in, pr, changes, 0); err != nil {
-				return err
-			}
-			return CloseFailures(ctx, c, in.Repo, synced)
-		}
 	}
 	sha, err := c.CreateCommit(ctx, in.Repo, commitMessage(in.BSR), tree, in.Base)
 	if err != nil {
@@ -141,6 +138,20 @@ func push(ctx context.Context, c *gh.Client, in SyncInput) error {
 		return err
 	}
 	return CloseFailures(ctx, c, in.Repo, synced)
+}
+
+// sameProtos reports whether the branch at tip already has the proto/ that the codegen job made,
+// comparing the tree git computes for the staged proto/ with the branch's.
+func sameProtos(ctx context.Context, c *gh.Client, in SyncInput, tip string) (bool, error) {
+	local, err := git.Run(ctx, in.Dir, "write-tree", "--prefix=proto/")
+	if err != nil {
+		return false, err
+	}
+	remote, err := c.SubtreeSHA(ctx, in.Repo, tip, "proto")
+	if err != nil {
+		return false, err
+	}
+	return remote != "" && strings.TrimSpace(string(local)) == remote, nil
 }
 
 func closedBody(pr *gh.PR) string {
