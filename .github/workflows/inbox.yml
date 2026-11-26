@@ -1,0 +1,51 @@
+name: Inbox
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      setup:
+        description: Run leo setup first, to create Inbox or restore its fields and views
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# A run waits for the one in progress rather than overlapping it.
+concurrency:
+  group: inbox
+  cancel-in-progress: false
+
+jobs:
+  inbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - run: go build -o "$RUNNER_TEMP/leo" ./cmd/leo
+
+      # Without repositories, a token for owner pug-sh covers every repo the App is installed on.
+      - uses: actions/create-github-app-token@v3
+        id: token
+        with:
+          client-id: ${{ vars.LEO_CLIENT_ID }}
+          private-key: ${{ secrets.LEO_PRIVATE_KEY }}
+          owner: pug-sh
+
+      - if: inputs.setup
+        run: '"$RUNNER_TEMP/leo" setup'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+
+      - run: '"$RUNNER_TEMP/leo" inbox'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
