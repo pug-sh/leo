@@ -80,14 +80,18 @@ func TestPlan(t *testing.T) {
 	  {"name": "app", "visibility": "public", "default_branch": "main"},
 	  {"name": "sdk-a", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]},
 	  {"name": "sdk-b", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]},
-	  {"name": "sdk-c", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]}
+	  {"name": "sdk-c", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]},
+	  {"name": "sdk-d", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]}
 	]`)
 	s.REST("GET", "/repos/pug-sh/sdk-b/issues", 200, `[{"number": 3, "state": "open", "title": "Proto sync failed",
 	  "user": {"login": "leo-the-pug[bot]"}, "body": "<!-- leo:protos-failed 8b5d0680b10c4693b4d9d15d3dbfc663 -->"}]`)
 	s.REST("GET", "/repos/pug-sh/sdk-c/issues", 200, `[]`)
 
 	c, out := s.Client(true)
-	cfg := &config.Config{Repos: map[string]config.Repo{"sdk-a": {Codegen: config.Codegen{Bun: "1.4.4", Node: "24"}}}}
+	cfg := &config.Config{Repos: map[string]config.Repo{
+		"sdk-a": {Codegen: config.Codegen{Bun: "1.4.4", Node: "24"}},
+		"sdk-d": {SkipProtos: true},
+	}}
 	p := NewPlanner(c, cfg, "buf")
 	p.cloneURL = func(repo string) string { return "file://" + filepath.Join(root, repo) }
 	p.resolve = func(context.Context) (BSRCommit, error) { return bsr, nil }
@@ -121,6 +125,7 @@ func TestPlan(t *testing.T) {
 		"dry-run: sdk-b#3: close",
 		"warning: sdk-c: Makefile: no PROTO_COMMIT line",
 		`dry-run: sdk-c: open issue "Proto sync failed"`,
+		"sdk-d: skipped, as leo.yaml asks",
 		"    | Syncing protos to `432c927e` failed: I couldn't check its protos. The protos come from pug's [commit d4c2ea2c]",
 	} {
 		if !strings.Contains(out.String(), line) {

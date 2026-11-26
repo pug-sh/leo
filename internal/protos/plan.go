@@ -108,6 +108,10 @@ func (p *Planner) Plan(ctx context.Context) (BSRCommit, []Target, error) {
 		if !r.HasTopic(sdkTopic) {
 			continue
 		}
+		if p.cfg.Repo(r.Name).SkipProtos {
+			p.c.Logf("%s: skipped, as leo.yaml asks", r.Name)
+			continue
+		}
 		target, drift, err := p.check(ctx, r, bsr)
 		switch {
 		case err != nil:

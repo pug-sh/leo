@@ -72,6 +72,7 @@ Per-repo overrides:
 
 - `unshipped`: paths whose changes don't reach users, for `leo release`. `.github/` never ships, and neither do lockfiles in `pug-sdk` repos.
 - `codegen`: the `bun`, `node` and `protoc` versions for an SDK's codegen job, where its CI differs from `sync.yml`'s defaults.
+- `skip_protos`: leaves an SDK out of proto syncs, for while a branch of its own carries one.
 
 ## Workflows
 

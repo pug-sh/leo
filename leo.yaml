@@ -7,8 +7,13 @@
 #
 # codegen: toolchain versions for a proto sync's codegen job, where the SDK's CI job differs from
 # sync.yml's defaults: bun, node and protoc.
+#
+# skip_protos: leaves the SDK out of proto syncs, for while a branch of its own carries one.
 repos:
   sdk-android:
+    # feat/duration-props-and-drop-reasons (#16) carries the sync to 432c927e: drop this once it
+    # merges.
+    skip_protos: true
     unshipped:
       # The build's Gradle, not part of the AAR.
       - gradle/wrapper/
@@ -23,6 +28,13 @@ repos:
       # added: a newer one regenerates lib/src/gen/google/protobuf/descriptor.pbenum.dart with an
       # enum the committed file doesn't have.
       protoc: "35.1"
+  sdk-ios:
+    # feat/duration-values (#6) carries the sync to 432c927e: drop this once it merges.
+    skip_protos: true
+  sdk-node:
+    # feat/duration-props-and-drop-reasons (#41) carries the sync to 432c927e: drop this once it
+    # merges.
+    skip_protos: true
   sdk-ruby:
     unshipped:
       # Development gems only: the gem's dependencies are in pug-sh.gemspec.

@@ -13,6 +13,9 @@ func TestLeoYAMLParses(t *testing.T) {
 	if got := cfg.Repo("sdk-ruby").Unshipped; !slices.Contains(got, "Gemfile") {
 		t.Errorf("sdk-ruby unshipped = %v", got)
 	}
+	if !cfg.Repo("sdk-node").SkipProtos {
+		t.Error("sdk-node's proto syncs aren't skipped")
+	}
 	if got := cfg.Repo("no-such-repo"); got.Unshipped != nil {
 		t.Errorf("unknown repo = %+v", got)
 	}

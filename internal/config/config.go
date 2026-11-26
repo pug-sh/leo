@@ -20,6 +20,8 @@ type Repo struct {
 	// Codegen sets toolchain versions for a proto sync's codegen job, where the SDK's CI differs
 	// from sync.yml's defaults.
 	Codegen Codegen `yaml:"codegen"`
+	// SkipProtos leaves the SDK out of proto syncs, for while a branch of its own carries one.
+	SkipProtos bool `yaml:"skip_protos"`
 }
 
 type Codegen struct {
