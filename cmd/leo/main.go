@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pug-sh/leo/internal/config"
+	"github.com/pug-sh/leo/internal/doctor"
 	"github.com/pug-sh/leo/internal/gh"
 	"github.com/pug-sh/leo/internal/inbox"
 	"github.com/pug-sh/leo/internal/protos"
@@ -27,6 +28,7 @@ commands:
   inbox         put open issues and pull requests on Inbox and fill their fields
   security      open an issue for each advisory whose alerts no pull request covers
   release       keep a reminder of each repo's unreleased changes
+  doctor        keep an issue listing the repos' hygiene gaps
   protos plan   list the SDKs whose proto/ differs from pug's protos
   protos sync   push one SDK's codegen diff as a pull request
 
@@ -112,6 +114,13 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		return release.New(c, cfg, time.Now()).Run(ctx)
+
+	case "doctor":
+		c, err := parse()
+		if err != nil {
+			return err
+		}
+		return doctor.Run(ctx, c)
 
 	case "protos plan":
 		path := configPath()

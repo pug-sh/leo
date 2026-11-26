@@ -13,6 +13,7 @@ const (
 	MarkerProtos       = "leo:protos"
 	MarkerProtosFailed = "leo:protos-failed"
 	MarkerProtosLocked = "leo:protos-locked"
+	MarkerDoctor       = "leo:doctor"
 )
 
 func Marker(name string, args ...string) string {

@@ -13,6 +13,7 @@ Leo never merges anything, and it only edits what it created (its issues, pull r
 | `leo inbox` | every 15 minutes | Adds every open issue and non-draft pull request to Inbox, fills empty fields, unarchives items reopened since they were archived, and keeps CI current on pull requests. |
 | `leo security` | every 15 minutes | Opens one issue per repo and advisory whose Dependabot or OSV-Scanner alerts no pull request covers, an hour after the oldest alert. Closes it once pull requests cover the alerts or none is open. |
 | `leo release` | every 15 minutes | Keeps one reminder per repo of the changes on main that ship but aren't released, once the oldest is a day old. Closes it when a release covers main. |
+| `leo doctor` | every 15 minutes | Keeps one "Repo hygiene" issue in this repo listing what the public repos lack: the `pug-sdk` topic on an `sdk-` repo, a `dependabot.yml` that updates each ecosystem monthly with its minor and patch updates grouped, the OSV-Scanner workflow, and Dependabot alerts and security updates. It closes the issue once nothing's left. |
 | `leo protos plan` | from pug's buf-ci, daily | Lists the SDKs whose `proto/` differs from `buf.build/pugsh/pug:main`. |
 | `leo protos sync` | per drifted SDK | Pushes the SDK's codegen to `leo/sync-protos` and opens or updates a `Sync protos to <commit>` pull request. |
 | `leo setup` | by hand | Creates Inbox if it's missing and adds any missing fields, options and views. |
@@ -79,7 +80,7 @@ Per-repo overrides:
 | File | Runs on | Does |
 |---|---|---|
 | `ci.yml` | push and pull request | `go vet`, `go test ./...` and a gofmt check |
-| `inbox.yml` | every 15 minutes, or by hand | `leo security`, `leo release` and `leo inbox`, never two runs at once. Run it by hand with "setup" checked to run `leo setup` first. |
+| `inbox.yml` | every 15 minutes, or by hand | `leo security`, `leo release`, `leo doctor` and `leo inbox`, never two runs at once. Run it by hand with "setup" checked to run `leo setup` first. |
 | `protos.yml` | pug's buf-ci, daily, or by hand | `leo protos plan`, then `sync.yml` for each drifted SDK. A newer run cancels an older one. |
 | `sync.yml` | calls from `protos.yml` | the codegen and push jobs for one SDK |
 
