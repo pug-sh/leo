@@ -154,7 +154,7 @@ func TestSetupDryRunAddsWhatIsMissing(t *testing.T) {
 		`dry-run: create table view "High priority" on "Inbox" filtered to "priority:High is:open"`,
 		`dry-run: create table view "By repo" on "Inbox"`,
 		`warning: built-in workflow "Item reopened" is off`,
-		`warning: Inbox has no built-in workflow "Auto-archive items"`,
+		`warning: built-in workflow "Auto-archive items" is off`,
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out)

@@ -132,11 +132,9 @@ func ensureView(ctx context.Context, c *gh.Client, p *gh.Project, views []gh.Vie
 
 func checkWorkflows(c *gh.Client, workflows []gh.Workflow) {
 	for _, name := range workflowNames {
+		// The API leaves out a built-in workflow that was never turned on.
 		i := slices.IndexFunc(workflows, func(w gh.Workflow) bool { return strings.EqualFold(w.Name, name) })
-		switch {
-		case i < 0:
-			c.Warnf("%s has no built-in workflow %q", Title, name)
-		case !workflows[i].Enabled:
+		if i < 0 || !workflows[i].Enabled {
 			c.Warnf("built-in workflow %q is off: turn it on in %s's workflows", name, Title)
 		}
 	}
