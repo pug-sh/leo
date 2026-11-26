@@ -9,16 +9,19 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/pug-sh/leo/internal/gh"
 	"github.com/pug-sh/leo/internal/inbox"
+	"github.com/pug-sh/leo/internal/security"
 )
 
 const usage = `usage: leo <command> [flags]
 
 commands:
-  setup   create Inbox if it's missing, and add any missing fields, options and views
-  inbox   put open issues and pull requests on Inbox and fill their fields
+  setup      create Inbox if it's missing, and add any missing fields, options and views
+  inbox      put open issues and pull requests on Inbox and fill their fields
+  security   open an issue for each advisory whose alerts no pull request covers
 
 Every command takes --dry-run, which prints each write instead of making it.
 The token comes from GH_TOKEN.`
@@ -73,6 +76,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		return inbox.Run(ctx, c)
+	case "security":
+		c, err := parse()
+		if err != nil {
+			return err
+		}
+		return security.Run(ctx, c, security.NewOSV("https://api.osv.dev"), time.Now())
 	}
 	return errUsage
 }

@@ -46,6 +46,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
 
-      - run: '"$RUNNER_TEMP/leo" inbox'
+      # Each command runs even if one before it failed. inbox goes last, so the issues the others
+      # open reach the board in the same run.
+      - if: ${{ !cancelled() && steps.token.outcome == 'success' }}
+        run: '"$RUNNER_TEMP/leo" security'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+
+      - if: ${{ !cancelled() && steps.token.outcome == 'success' }}
+        run: '"$RUNNER_TEMP/leo" inbox'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}

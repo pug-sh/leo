@@ -2,10 +2,107 @@ package gh
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 )
+
+type DependabotAlert struct {
+	Number    int
+	GHSA      string
+	CVE       string
+	Package   string
+	Ecosystem string
+	Manifest  string
+	Severity  string
+	Fixed     string
+	URL       string
+	Created   time.Time
+}
+
+// DependabotAlerts lists repo's open Dependabot alerts. A repo with Dependabot alerts turned off
+// has none.
+func (c *Client) DependabotAlerts(ctx context.Context, repo string) ([]DependabotAlert, error) {
+	opts := &github.ListAlertsOptions{State: new("open"), ListCursorOptions: github.ListCursorOptions{PerPage: 100}}
+	var alerts []DependabotAlert
+	for {
+		page, resp, err := c.rest.Dependabot.ListRepoAlerts(ctx, Org, repo, opts)
+		if err != nil {
+			var e *github.ErrorResponse
+			if isStatus(err, 403) && errors.As(err, &e) && strings.Contains(e.Message, "disabled") {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("%s: list Dependabot alerts: %w", repo, err)
+		}
+		for _, a := range page {
+			alerts = append(alerts, DependabotAlert{
+				Number:    a.GetNumber(),
+				GHSA:      a.GetSecurityAdvisory().GetGHSAID(),
+				CVE:       a.GetSecurityAdvisory().GetCVEID(),
+				Package:   a.GetDependency().GetPackage().GetName(),
+				Ecosystem: a.GetDependency().GetPackage().GetEcosystem(),
+				Manifest:  a.GetDependency().GetManifestPath(),
+				Severity:  a.GetSecurityAdvisory().GetSeverity(),
+				Fixed:     a.GetSecurityVulnerability().GetFirstPatchedVersion().GetIdentifier(),
+				URL:       a.GetHTMLURL(),
+				Created:   a.GetCreatedAt().Time,
+			})
+		}
+		if resp.After == "" {
+			return alerts, nil
+		}
+		opts.ListCursorOptions.After = resp.After
+	}
+}
+
+type CodeScanningAlert struct {
+	Number   int
+	Rule     string
+	Severity string
+	Path     string
+	Message  string
+	URL      string
+	Created  time.Time
+}
+
+// CodeScanningAlerts lists repo's open code scanning alerts from tool. A repo without code
+// scanning has none.
+func (c *Client) CodeScanningAlerts(ctx context.Context, repo, tool string) ([]CodeScanningAlert, error) {
+	opts := &github.AlertListOptions{State: "open", ToolName: tool, ListOptions: github.ListOptions{PerPage: 100}}
+	var alerts []CodeScanningAlert
+	for {
+		page, resp, err := c.rest.CodeScanning.ListAlertsForRepo(ctx, Org, repo, opts)
+		if err != nil {
+			if isStatus(err, 404) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("%s: list code scanning alerts: %w", repo, err)
+		}
+		for _, a := range page {
+			severity := a.GetRule().GetSecuritySeverityLevel()
+			if severity == "" {
+				severity = a.GetRule().GetSeverity()
+			}
+			alerts = append(alerts, CodeScanningAlert{
+				Number:   a.GetNumber(),
+				Rule:     a.GetRule().GetID(),
+				Severity: severity,
+				Path:     a.GetMostRecentInstance().GetLocation().GetPath(),
+				Message:  a.GetMostRecentInstance().GetMessage().GetText(),
+				URL:      a.GetHTMLURL(),
+				Created:  a.GetCreatedAt().Time,
+			})
+		}
+		if resp.NextPage == 0 {
+			return alerts, nil
+		}
+		opts.ListOptions.Page = resp.NextPage
+	}
+}
 
 // DependabotUpdate is what Dependabot did about one open alert.
 type DependabotUpdate struct {
