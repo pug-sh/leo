@@ -1,0 +1,15 @@
+# Per-repo overrides, keyed by repo name in pug-sh.
+#
+# unshipped: paths whose changes don't reach users, for leo release. .github/ never ships, and
+# neither do lockfiles in repos with the pug-sdk topic. A pattern ending in / matches a directory,
+# one with a / in it matches the whole path, and any other matches a file name anywhere; * and ?
+# work as in Go's path.Match.
+repos:
+  sdk-android:
+    unshipped:
+      # The build's Gradle, not part of the AAR.
+      - gradle/wrapper/
+  sdk-ruby:
+    unshipped:
+      # Development gems only: the gem's dependencies are in pug-sh.gemspec.
+      - Gemfile

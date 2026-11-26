@@ -54,6 +54,11 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.token }}
 
       - if: ${{ !cancelled() && steps.token.outcome == 'success' }}
+        run: '"$RUNNER_TEMP/leo" release'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+
+      - if: ${{ !cancelled() && steps.token.outcome == 'success' }}
         run: '"$RUNNER_TEMP/leo" inbox'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
