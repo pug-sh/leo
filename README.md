@@ -120,7 +120,7 @@ The REST call succeeds when a workflow is already on, where `gh workflow enable`
    - Repository permissions, read only: Checks, Commit statuses, Code scanning alerts and Dependabot alerts.
    - Organization permissions: Projects read and write, Members read.
    - Leave Workflows unset, so the key can't edit CI in every repo. `leo protos sync` works without it.
-   - Upload `assets/leo.jpg` as the logo.
+   - Upload [pug.sh's logo](https://pug.sh/logo.svg) as the logo, as a PNG trimmed to the pug with a transparent background, and set the badge background color to white. The App page draws the logo at under half the badge's width, so a photo reads poorly there.
    - Generate a private key, and install the App on pug-sh with All repositories.
 2. **Add credentials.** Create an org variable `LEO_CLIENT_ID` with the App's Client ID and an org secret `LEO_PRIVATE_KEY` with the `.pem` file, and share both with `leo` and `pug`.
 3. **Create the board.** Run the Inbox workflow by hand with "setup" checked. Then, in Inbox, turn on the built-in workflows Item reopened and Auto-archive items, with the filter `is:closed updated:<@today-2w`. Set the Board view's columns to Status and its swimlanes to Priority, and group the By repo view by Repository. The API can't set either.
