@@ -49,7 +49,7 @@ An SDK takes part when it has the `pug-sdk` topic and its Makefile has:
 - vendored protos in `proto/`
 - a `protos` or `codegen` target
 
-Each SDK only drifts, and only gets a pull request, when a proto its `--path` list covers changes.
+Each SDK only drifts, and only gets a pull request, when a proto its `--path` list covers changes. Leo compares the protos themselves, not BSR commits, since pug mints a BSR commit on every push. It skips an SDK whose open pull request, its own or another, already has the protos. Once main or another pull request has them, Leo closes its sync pull request and deletes the branch, unless someone else has committed to it.
 
 `sync.yml` runs in two jobs, because SDK installs and builds run third-party code that could read any secret in its job. The codegen job has no secrets and a read-only token: it sets `PROTO_COMMIT`, runs `make sync-protos` and the codegen target, and uploads the diff and the end of its log. The push job runs no SDK tooling. With an App token for that one SDK, it commits the diff through the API, so the commit is signed. If the branch has commits from someone else, it comments on the pull request instead. If main changed `.github/workflows/` since the branch's base, GitHub refuses the force-push, because the App has no Workflows permission. Leo then recreates the branch and links the new pull request from the old one. A failure in either job opens a `Proto sync failed` issue in the SDK, which Leo closes after the next successful sync.
 

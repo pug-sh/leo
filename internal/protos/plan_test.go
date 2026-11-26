@@ -60,6 +60,7 @@ func TestDiffTrees(t *testing.T) {
 
 func TestPlan(t *testing.T) {
 	root := t.TempDir()
+	s := ghtest.New(t)
 	drifted := gittest.Init(t, filepath.Join(root, "sdk-a"))
 	drifted.WriteFile("Makefile", makefile)
 	drifted.WriteFile("bun.lock", "{}\n")
@@ -74,15 +75,50 @@ func TestPlan(t *testing.T) {
 	broken.WriteFile("Makefile", "build:\n\tgo build ./...\n")
 	broken.WriteFile("go.mod", "module x\n")
 	broken.Commit("2026-11-01T00:00:00Z", "Start")
+	for _, name := range []string{"sdk-e", "sdk-f"} {
+		r := gittest.Init(t, filepath.Join(root, name))
+		r.WriteFile("Makefile", makefile)
+		r.WriteFile("go.mod", "module x\n")
+		r.WriteFile("proto/sdk/v1/a.proto", "old\n")
+		r.Commit("2026-11-01T00:00:00Z", "Start")
+	}
 
-	s := ghtest.New(t)
+	// The tree a branch has for proto/ once it syncs the module's protos.
+	synced := gittest.Init(t, filepath.Join(root, "synced"))
+	synced.WriteFile("proto/sdk/v1/a.proto", "new\n")
+	synced.Git("2026-11-01T00:00:00Z", "add", "--all")
+	tree := synced.Git("2026-11-01T00:00:00Z", "write-tree", "--prefix=proto/")
+	head := func(repo, sha, protoTree string) {
+		s.REST("GET", "/repos/pug-sh/"+repo+"/git/commits/"+sha, 200, `{"sha": "`+sha+`", "tree": {"sha": "root-`+sha+`"}}`)
+		s.REST("GET", "/repos/pug-sh/"+repo+"/git/trees/root-"+sha, 200, `{"tree": [{"path": "proto", "type": "tree", "sha": "`+protoTree+`"}]}`)
+	}
+
 	s.REST("GET", "/orgs/pug-sh/repos", 200, `[
 	  {"name": "app", "visibility": "public", "default_branch": "main"},
 	  {"name": "sdk-a", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]},
 	  {"name": "sdk-b", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]},
 	  {"name": "sdk-c", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]},
-	  {"name": "sdk-d", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]}
+	  {"name": "sdk-d", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]},
+	  {"name": "sdk-e", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]},
+	  {"name": "sdk-f", "visibility": "public", "default_branch": "main", "topics": ["pug-sdk"]}
 	]`)
+	// sdk-a drifted, and an unrelated pull request doesn't sync it.
+	s.REST("GET", "/repos/pug-sh/sdk-a/pulls", 200, `[{"number": 4, "user": {"login": "someone"}, "head": {"ref": "feat/x", "sha": "a4"}}]`)
+	head("sdk-a", "a4", "unrelated")
+	// sdk-b is in sync, so its failure issue and Leo's sync pull request close.
+	s.REST("GET", "/repos/pug-sh/sdk-b/pulls", 200, `[{"number": 7, "user": {"login": "leo-the-pug[bot]"}, "head": {"ref": "leo/sync-protos", "sha": "b7"}}]`)
+	s.REST("GET", "/repos/pug-sh/sdk-b/compare/main...leo/sync-protos", 200, `{"commits": [{"sha": "b7", "author": {"login": "leo-the-pug[bot]"}}]}`)
+	// sdk-e drifted, but #41 already syncs it, so Leo's own pull request closes.
+	s.REST("GET", "/repos/pug-sh/sdk-e/pulls", 200, `[
+	  {"number": 9, "user": {"login": "leo-the-pug[bot]"}, "head": {"ref": "leo/sync-protos", "sha": "e9"}},
+	  {"number": 41, "user": {"login": "poluruprvn"}, "head": {"ref": "feat/duration-values", "sha": "e41"}}]`)
+	head("sdk-e", "e41", tree)
+	s.REST("GET", "/repos/pug-sh/sdk-e/issues", 200, `[]`)
+	s.REST("GET", "/repos/pug-sh/sdk-e/compare/main...leo/sync-protos", 200, `{"commits": [{"sha": "e9", "author": {"login": "leo-the-pug[bot]"}}]}`)
+	// sdk-f drifted, and Leo's own pull request already has the protos.
+	s.REST("GET", "/repos/pug-sh/sdk-f/pulls", 200, `[{"number": 2, "user": {"login": "leo-the-pug[bot]"}, "head": {"ref": "leo/sync-protos", "sha": "f2"}}]`)
+	head("sdk-f", "f2", tree)
+	s.REST("GET", "/repos/pug-sh/sdk-f/issues", 200, `[]`)
 	s.REST("GET", "/repos/pug-sh/sdk-b/issues", 200, `[{"number": 3, "state": "open", "title": "Proto sync failed",
 	  "user": {"login": "leo-the-pug[bot]"}, "body": "<!-- leo:protos-failed 8b5d0680b10c4693b4d9d15d3dbfc663 -->"}]`)
 	s.REST("GET", "/repos/pug-sh/sdk-c/issues", 200, `[]`)
@@ -116,13 +152,20 @@ func TestPlan(t *testing.T) {
 	if !slices.Equal(targets, want) {
 		t.Errorf("targets = %+v, want %+v", targets, want)
 	}
-	if len(exported) != 2 || !slices.Equal(exported[0], []string{"sdk"}) {
+	if len(exported) != 4 || !slices.Equal(exported[0], []string{"sdk"}) {
 		t.Errorf("exported %v", exported)
 	}
 	for _, line := range []string{
 		"sdk-a: 1 file differs in proto/ from 432c927e",
-		"dry-run: sdk-b#3: comment \"proto/ matches `432c927e` now, so I'm closing this.\"",
+		"dry-run: sdk-b#3: comment \"main's proto/ matches `432c927e` now, so I'm closing this.\"",
 		"dry-run: sdk-b#3: close",
+		"dry-run: sdk-b#7: comment \"main's proto/ matches `432c927e` now, so I'm closing this.\"",
+		"dry-run: sdk-b#7: close",
+		"dry-run: sdk-b: delete branch leo/sync-protos",
+		"sdk-e: #41 already has these protos",
+		"dry-run: sdk-e#9: comment \"#41 syncs proto/ to `432c927e`, so I'm closing this.\"",
+		"dry-run: sdk-e: delete branch leo/sync-protos",
+		"sdk-f: #2 already has these protos",
 		"warning: sdk-c: Makefile: no PROTO_COMMIT line",
 		`dry-run: sdk-c: open issue "Proto sync failed"`,
 		"sdk-d: skipped, as leo.yaml asks",
@@ -134,5 +177,8 @@ func TestPlan(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "app") {
 		t.Errorf("checked a repo without the pug-sdk topic:\n%s", out)
+	}
+	if strings.Contains(out.String(), "sdk-f#2: close") {
+		t.Errorf("closed Leo's pull request that has the protos:\n%s", out)
 	}
 }
