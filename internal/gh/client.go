@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
@@ -30,7 +31,7 @@ type Client struct {
 }
 
 func New(token string, dryRun bool, out io.Writer) (*Client, error) {
-	hc := &http.Client{Transport: bearer{token: token, base: http.DefaultTransport}}
+	hc := &http.Client{Transport: bearer{token: token, base: http.DefaultTransport}, Timeout: time.Minute}
 	rest, err := github.NewClient(github.WithHTTPClient(hc))
 	if err != nil {
 		return nil, err
