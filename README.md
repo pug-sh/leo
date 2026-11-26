@@ -119,7 +119,7 @@ The REST call succeeds when a workflow is already on, where `gh workflow enable`
 1. **Register the App.** In the org's Settings, under Developer settings, then GitHub Apps, choose New.
    - Name it `Leo the Pug`, set the homepage to `https://github.com/pug-sh/leo`, turn the webhook off, and allow installing it only on this account.
    - Repository permissions, read and write: Contents, Pull requests, Issues and Actions.
-   - Repository permissions, read only: Checks, Commit statuses, Code scanning alerts and Dependabot alerts.
+   - Repository permissions, read only: Administration, Checks, Commit statuses, Code scanning alerts and Dependabot alerts. Administration lets `leo doctor` see whether Dependabot security updates are on.
    - Organization permissions: Projects read and write, Members read.
    - Leave Workflows unset, so the key can't edit CI in every repo. `leo protos sync` works without it.
    - Upload [pug.sh's logo](https://pug.sh/logo.svg) as the logo, as a PNG trimmed to the pug with a transparent background, and set the badge background color to white. The App page draws the logo at under half the badge's width, so a photo reads poorly there.
