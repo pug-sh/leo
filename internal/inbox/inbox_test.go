@@ -107,6 +107,25 @@ func TestLoadNeedsSetup(t *testing.T) {
 	}
 }
 
+func TestSetupCarriesOnWhenItCantMakeInboxPublic(t *testing.T) {
+	s := ghtest.New(t)
+	s.GraphQL("projectsV2(", nil, `{"organization": {"projectsV2": {"nodes": [
+	  {"id": "PVT_inbox", "number": 1, "title": "Inbox", "public": false}
+	]}}}`)
+	s.GraphQLError("updateProjectV2(", "Viewer not authorized to change project visibility")
+	s.REST("GET", "/orgs/pug-sh/projectsV2/1/fields", 200, fieldsJSON)
+	s.GraphQL("views(", nil, `{"node": {
+	  "views": {"nodes": [{"name": "Board", "layout": "BOARD_LAYOUT"}, {"name": "High priority", "layout": "TABLE_LAYOUT", "filter": "priority:High is:open"}, {"name": "By repo", "layout": "TABLE_LAYOUT"}]},
+	  "workflows": {"nodes": []}}}`)
+	c, out := s.Client(false)
+	if err := Setup(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	if want := `warning: make project "Inbox" public: Viewer not authorized to change project visibility: make it public in its settings`; !strings.Contains(out.String(), want) {
+		t.Errorf("output lacks %q:\n%s", want, out)
+	}
+}
+
 func TestSetupDryRunAddsWhatIsMissing(t *testing.T) {
 	s := ghtest.New(t)
 	s.GraphQL("projectsV2(", nil, `{"organization": {"projectsV2": {"nodes": [

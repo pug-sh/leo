@@ -124,7 +124,7 @@ The REST call succeeds when a workflow is already on, where `gh workflow enable`
    - Upload [pug.sh's logo](https://pug.sh/logo.svg) as the logo, as a PNG trimmed to the pug with a transparent background, and set the badge background color to white. The App page draws the logo at under half the badge's width, so a photo reads poorly there.
    - Generate a private key, and install the App on pug-sh with All repositories.
 2. **Add credentials.** Create an org variable `LEO_CLIENT_ID` with the App's Client ID and an org secret `LEO_PRIVATE_KEY` with the `.pem` file, and share both with `leo` and `pug`.
-3. **Create the board.** Run the Inbox workflow by hand with "setup" checked. Then, in Inbox, turn on the built-in workflows Item reopened and Auto-archive items, with the filter `is:closed updated:<@today-2w`. Set the Board view's columns to Status and its swimlanes to Priority, and group the By repo view by Repository. The API can't set either.
+3. **Create the board.** Run the Inbox workflow by hand with "setup" checked. Then make Inbox public in its settings, since GitHub only lets a person change a project's visibility. In Inbox, also turn on the built-in workflows Item reopened and Auto-archive items, with the filter `is:closed updated:<@today-2w`. Set the Board view's columns to Status and its swimlanes to Priority, and group the By repo view by Repository. The API can't set either.
 
 ## Running locally
 

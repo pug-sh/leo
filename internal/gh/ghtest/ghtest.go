@@ -32,6 +32,7 @@ type graphqlRoute struct {
 	match string
 	vars  map[string]string
 	data  string
+	err   string
 }
 
 func New(t *testing.T) *Server {
@@ -53,7 +54,14 @@ func (s *Server) REST(method, path string, status int, body string) {
 func (s *Server) GraphQL(match string, vars map[string]string, data string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.graphql = append(s.graphql, graphqlRoute{match, vars, data})
+	s.graphql = append(s.graphql, graphqlRoute{match: match, vars: vars, data: data})
+}
+
+// GraphQLError answers the first query containing match with an error.
+func (s *Server) GraphQLError(match, message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.graphql = append(s.graphql, graphqlRoute{match: match, err: message})
 }
 
 // Client returns a client of the server and the buffer it logs to.
@@ -95,6 +103,10 @@ func (s *Server) serveGraphQL(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, route := range s.graphql {
 		if strings.Contains(req.Query, route.match) && varsMatch(req.Variables, route.vars) {
+			if route.err != "" {
+				json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": route.err}}})
+				return
+			}
 			fmt.Fprintf(w, `{"data":%s}`, route.data)
 			return
 		}

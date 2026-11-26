@@ -40,8 +40,10 @@ func Setup(ctx context.Context, c *gh.Client) error {
 		c.Warnf("%s is closed: reopen it in its settings", Title)
 	}
 	if !p.Public {
+		// GitHub only lets a person change a project's visibility, so with Leo's token this fails
+		// until someone makes Inbox public in its settings.
 		if err := c.MakeProjectPublic(ctx, p); err != nil {
-			return err
+			c.Warnf("%v: make it public in its settings", err)
 		}
 	}
 
