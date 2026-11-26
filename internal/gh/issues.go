@@ -81,7 +81,11 @@ func (c *Client) EditIssue(ctx context.Context, repo string, number int, title, 
 }
 
 func (c *Client) Comment(ctx context.Context, repo string, number int, body string) error {
-	if !c.write("%s#%d: comment %q", repo, number, body) {
+	first, rest, multiline := strings.Cut(body, "\n")
+	if !c.write("%s#%d: comment %q", repo, number, first) {
+		if multiline {
+			c.detail(strings.TrimLeft(rest, "\n"))
+		}
 		return nil
 	}
 	if _, _, err := c.rest.Issues.CreateComment(ctx, Org, repo, number, github.IssueCommentRequest{Body: body}); err != nil {

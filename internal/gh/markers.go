@@ -10,6 +10,7 @@ import (
 const (
 	MarkerSecurity     = "leo:security"
 	MarkerRelease      = "leo:release"
+	MarkerProtos       = "leo:protos"
 	MarkerProtosFailed = "leo:protos-failed"
 	MarkerProtosLocked = "leo:protos-locked"
 )

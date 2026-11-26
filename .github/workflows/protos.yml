@@ -1,0 +1,74 @@
+name: Protos
+
+on:
+  # pug's buf-ci starts this after it pushes pug's protos to the BSR.
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+# A newer run syncs to a newer pug commit, so it cancels an older one.
+concurrency:
+  group: protos
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      commit: ${{ steps.plan.outputs.commit }}
+      source: ${{ steps.plan.outputs.source }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # No cache: sync.yml's codegen job runs third-party code that can write to this repo's cache.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: bufbuild/buf-setup-action@v1.50.0
+        with:
+          version: 1.73.0
+          github_token: ${{ github.token }}
+
+      - run: go build -o "$RUNNER_TEMP/leo" ./cmd/leo
+
+      - uses: actions/create-github-app-token@v3
+        id: token
+        with:
+          client-id: ${{ vars.LEO_CLIENT_ID }}
+          private-key: ${{ secrets.LEO_PRIVATE_KEY }}
+          owner: pug-sh
+
+      - id: plan
+        run: '"$RUNNER_TEMP/leo" protos plan'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+
+  sync:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.matrix != '' && needs.plan.outputs.matrix != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/sync.yml
+    with:
+      repo: ${{ matrix.repo }}
+      branch: ${{ matrix.branch }}
+      toolchain: ${{ matrix.toolchain }}
+      target: ${{ matrix.target }}
+      bun: ${{ matrix.bun }}
+      node: ${{ matrix.node }}
+      protoc: ${{ matrix.protoc }}
+      commit: ${{ needs.plan.outputs.commit }}
+      source: ${{ needs.plan.outputs.source }}
+    secrets:
+      LEO_PRIVATE_KEY: ${{ secrets.LEO_PRIVATE_KEY }}

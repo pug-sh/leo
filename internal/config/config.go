@@ -17,6 +17,15 @@ type Repo struct {
 	// Unshipped lists paths that don't reach users, on top of .github/ and, in pug-sdk repos,
 	// lockfiles.
 	Unshipped []string `yaml:"unshipped"`
+	// Codegen sets toolchain versions for a proto sync's codegen job, where the SDK's CI differs
+	// from sync.yml's defaults.
+	Codegen Codegen `yaml:"codegen"`
+}
+
+type Codegen struct {
+	Bun    string `yaml:"bun"`
+	Node   string `yaml:"node"`
+	Protoc string `yaml:"protoc"`
 }
 
 func Load(path string) (*Config, error) {

@@ -4,11 +4,25 @@
 # neither do lockfiles in repos with the pug-sdk topic. A pattern ending in / matches a directory,
 # one with a / in it matches the whole path, and any other matches a file name anywhere; * and ?
 # work as in Go's path.Match.
+#
+# codegen: toolchain versions for a proto sync's codegen job, where the SDK's CI job differs from
+# sync.yml's defaults: bun, node and protoc.
 repos:
   sdk-android:
     unshipped:
       # The build's Gradle, not part of the AAR.
       - gradle/wrapper/
+  sdk-browser:
+    codegen:
+      # As sdk-browser's build job.
+      bun: 1.4.4
+      node: "24"
+  sdk-flutter:
+    codegen:
+      # The newest protoc whose descriptor.proto lacks FeatureSet.ProtoLimitsFeature, which 36.0
+      # added: a newer one regenerates lib/src/gen/google/protobuf/descriptor.pbenum.dart with an
+      # enum the committed file doesn't have.
+      protoc: "35.1"
   sdk-ruby:
     unshipped:
       # Development gems only: the gem's dependencies are in pug-sh.gemspec.

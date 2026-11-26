@@ -1,0 +1,242 @@
+name: Sync
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        type: string
+        required: true
+      branch:
+        type: string
+        required: true
+      toolchain:
+        type: string
+        required: true
+      target:
+        type: string
+        required: true
+      bun:
+        type: string
+        default: ""
+      node:
+        type: string
+        default: ""
+      protoc:
+        type: string
+        default: ""
+      commit:
+        type: string
+        required: true
+      source:
+        type: string
+        required: true
+    secrets:
+      LEO_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # SDK installs and builds run third-party code that can read every secret in its job from the
+  # runner's memory, and the App key works on every repo. So this job has no secrets and a
+  # read-only token, and the push job below runs no SDK tooling.
+  #
+  # Each toolchain's setup copies its SDKs' codegen CI jobs: sdk-node's and sdk-crawlers' check
+  # (bun), sdk-browser's build (bun, with leo.yaml's versions), sdk-go's check (go), sdk-ruby's
+  # check (ruby), sdk-flutter's format-and-codegen (flutter), sdk-android's check (gradle) and
+  # sdk-ios's linux (swift). When an SDK changes its codegen toolchain in CI, change it here too.
+  codegen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      base: ${{ steps.base.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: pug-sh/${{ inputs.repo }}
+          ref: ${{ inputs.branch }}
+          persist-credentials: false
+
+      - id: base
+        run: |
+          mkdir -p "$RUNNER_TEMP/codegen"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - if: inputs.toolchain != 'gradle' && inputs.toolchain != ''
+        uses: bufbuild/buf-setup-action@v1.50.0
+        with:
+          version: 1.73.0
+          github_token: ${{ github.token }}
+
+      - if: inputs.toolchain == 'bun'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ inputs.bun || 'latest' }}
+
+      - if: inputs.toolchain == 'bun' && inputs.node != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node }}
+
+      - if: inputs.toolchain == 'bun'
+        run: bun install --frozen-lockfile 2>&1 | tee -a "$RUNNER_TEMP/codegen/codegen.log"
+
+      - if: inputs.toolchain == 'go'
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+
+      - if: inputs.toolchain == 'ruby'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - if: inputs.toolchain == 'flutter'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - if: inputs.toolchain == 'flutter'
+        run: |
+          {
+            flutter pub get
+            dart pub global activate protoc_plugin 25.0.0
+          } 2>&1 | tee -a "$RUNNER_TEMP/codegen/codegen.log"
+
+      # The Makefile's PROTOC_VERSION wins over leo.yaml's protoc, as in sdk-ruby's CI.
+      - if: inputs.toolchain == 'ruby' || inputs.toolchain == 'flutter'
+        name: Install protoc
+        env:
+          FALLBACK: ${{ inputs.protoc }}
+        run: |
+          version=$(sed -n 's/^PROTOC_VERSION *:= *//p' Makefile)
+          version=${version:-$FALLBACK}
+          test -n "$version" || { echo "No protoc version: set PROTOC_VERSION in the Makefile or codegen.protoc in leo.yaml"; exit 1; }
+          curl -fsSL -o "$RUNNER_TEMP/protoc.zip" "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/protoc-${version}-linux-x86_64.zip"
+          sudo unzip -q -o "$RUNNER_TEMP/protoc.zip" -d /usr/local bin/protoc 'include/*'
+
+      # The Android Makefile builds its own buf, at the version gradle/libs.versions.toml pins.
+      - if: inputs.toolchain == 'gradle'
+        uses: gradle/actions/setup-gradle@v6
+
+      # make protos builds protoc from source in the Swift 6.2 container, which takes most of a
+      # cold run.
+      - if: inputs.toolchain == 'swift'
+        id: swift-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            .build
+            Tools/.build
+          key: linux-${{ inputs.repo }}-${{ hashFiles('Tools/linux.Dockerfile') }}-${{ hashFiles('Package.resolved', 'Tools/Package.resolved') }}
+          restore-keys: linux-${{ inputs.repo }}-${{ hashFiles('Tools/linux.Dockerfile') }}-
+
+      - if: inputs.toolchain == ''
+        run: |
+          echo "No toolchain set up this SDK's codegen." | tee -a "$RUNNER_TEMP/codegen/codegen.log"
+          exit 1
+
+      - name: Pin, sync and regenerate
+        env:
+          COMMIT: ${{ inputs.commit }}
+          TARGET: ${{ inputs.target }}
+          TOOLCHAIN: ${{ inputs.toolchain }}
+        run: |
+          {
+            sed -i -E "s/^(PROTO_COMMIT[[:space:]]*:=[[:space:]]*)[^[:space:]#]+/\1$COMMIT/" Makefile
+            grep -Eq "^PROTO_COMMIT[[:space:]]*:=[[:space:]]*$COMMIT([[:space:]]|#|$)" Makefile \
+              || { echo "The Makefile has no PROTO_COMMIT := <commit> line"; exit 1; }
+            make sync-protos
+            if [ "$TOOLCHAIN" = swift ]; then
+              make "docker-$TARGET"
+            else
+              make "$TARGET"
+            fi
+          } 2>&1 | tee -a "$RUNNER_TEMP/codegen/codegen.log"
+
+      - if: ${{ !cancelled() && inputs.toolchain == 'swift' && steps.swift-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            .build
+            Tools/.build
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
+
+      - name: Save the diff
+        if: ${{ !cancelled() }}
+        run: |
+          git add -A
+          git diff --cached --binary > "$RUNNER_TEMP/codegen/changes.patch"
+          git diff --cached --stat
+          tail -n 300 "$RUNNER_TEMP/codegen/codegen.log" > "$RUNNER_TEMP/codegen/tail.log" || true
+          mv "$RUNNER_TEMP/codegen/tail.log" "$RUNNER_TEMP/codegen/codegen.log"
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: codegen-${{ inputs.repo }}
+          path: ${{ runner.temp }}/codegen/
+          retention-days: 7
+
+  # Turns the diff into a pull request with an App token for this SDK alone. It runs no SDK
+  # tooling, and treats the codegen job's artifact as untrusted data.
+  push:
+    needs: codegen
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # No cache: the codegen job runs third-party code that can write to this repo's cache.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - run: go build -o "$RUNNER_TEMP/leo" ./cmd/leo
+
+      - if: needs.codegen.result == 'success'
+        uses: actions/checkout@v7
+        with:
+          repository: pug-sh/${{ inputs.repo }}
+          ref: ${{ needs.codegen.outputs.base }}
+          path: sdk
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: codegen-${{ inputs.repo }}
+          path: ${{ runner.temp }}/codegen
+
+      - uses: actions/create-github-app-token@v3
+        id: token
+        with:
+          client-id: ${{ vars.LEO_CLIENT_ID }}
+          private-key: ${{ secrets.LEO_PRIVATE_KEY }}
+          owner: pug-sh
+          repositories: ${{ inputs.repo }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Push the sync
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ inputs.repo }}
+          BRANCH: ${{ inputs.branch }}
+          BASE: ${{ needs.codegen.outputs.base }}
+          COMMIT: ${{ inputs.commit }}
+          SOURCE: ${{ inputs.source }}
+          CODEGEN: ${{ needs.codegen.result }}
+        run: >-
+          "$RUNNER_TEMP/leo" protos sync
+          --repo "$REPO" --branch "$BRANCH" --base "$BASE" --dir sdk
+          --patch "$RUNNER_TEMP/codegen/changes.patch" --log "$RUNNER_TEMP/codegen/codegen.log"
+          --commit "$COMMIT" --source "$SOURCE" --codegen "$CODEGEN"
